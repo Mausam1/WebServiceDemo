@@ -11,12 +11,12 @@ import UIKit
 class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource {
 
     @IBOutlet weak var tableView: UITableView!
-    var arrayData: AnyObject = []
+    var arrayData: [AnyObject] = []
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        navigationController?.navigationBar.translucent = false
-        tableView.registerClass(UITableViewCell.self, forCellReuseIdentifier: "cell")
+        navigationController?.navigationBar.isTranslucent = false
+        tableView.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
         tableView.delegate = self
         tableView.dataSource = self
         callWebserviceByUsingNSUrlRequest()
@@ -24,58 +24,73 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
 
     //MARK: UITableView delegate and data source methods
     
-     func tableView(tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
         return "\(section + 1)"
     }
 
-    func numberOfSectionsInTableView(tableView: UITableView) -> Int {
+    func numberOfSections(in tableView: UITableView) -> Int {
         return arrayData.count
     }
     
-    func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return 1
     }
     
-    func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
-        let cell:UITableViewCell = tableView.dequeueReusableCellWithIdentifier("cell", forIndexPath: indexPath)
-        cell.imageView!.image? = (cell.imageView!.image?.imageWithRenderingMode(.AlwaysTemplate))!
-        cell.imageView!.tintColor = UIColor.lightGrayColor()
-        let url = NSURL(string: (arrayData[indexPath.section].valueForKey("im:image")?.valueForKey("label")![2] as? String)!)
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let cell:UITableViewCell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
+        cell.imageView!.image? = (cell.imageView!.image?.withRenderingMode(.alwaysTemplate))!
+        cell.imageView!.tintColor = UIColor.lightGray
         
-        NSURLSession.sharedSession().dataTaskWithURL( url!, completionHandler: {
-            (data, response, error) -> Void in
-            dispatch_async(dispatch_get_main_queue()) {
-                cell.textLabel!.text = self.arrayData[indexPath.section].valueForKey("im:name")?.valueForKey("label") as? String
-                if let data = data {
-                    cell.imageView!.image = UIImage(data: data)
-                }
+        if let tempObj = arrayData[indexPath.section].value(forKey: "im:image"){
+            if let urlString = ((tempObj as AnyObject).value(forKey: "label") as AnyObject)[2] as! String?{
+                let url = URL(string: urlString)
+                let config = URLSessionConfiguration.default
+                let session = URLSession(configuration: config)
+
+               let task = session.dataTask( with: url!, completionHandler: {
+                    (data, response, error) -> Void in
+                    DispatchQueue.main.async {
+                        cell.textLabel!.text = (self.arrayData[indexPath.section].value(forKey: "im:name") as AnyObject).value(forKey: "label") as? String
+                        if let data = data {
+                            cell.imageView!.image = UIImage(data: data)
+                        }
+                    }
+                })
+                task.resume()
+                session.finishTasksAndInvalidate()
             }
-        }).resume()
+        }
+        
         return cell
     }
     
-    func tableView(tableView: UITableView, heightForRowAtIndexPath indexPath: NSIndexPath) -> CGFloat {
+    func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         return 75
     }
 
     //MARK: Call webservice
     
     func callWebserviceByUsingNSUrlRequest() {
-        let url = NSURL(string: "https://itunes.apple.com/us/rss/topgrossingipadapplications/limit=200/json")
-        let theRequest = NSMutableURLRequest(URL: url!)
-        theRequest.HTTPMethod = "GET"
-        let session = NSURLSession.sharedSession()
-        let task = session.dataTaskWithRequest(theRequest) { (data, response, error)  -> Void  in
+        let url = URL(string: "https://itunes.apple.com/us/rss/topgrossingipadapplications/limit=200/json")
+        var theRequest = URLRequest(url: url!, cachePolicy: NSURLRequest.CachePolicy.reloadIgnoringCacheData, timeoutInterval: 10)
+
+        let config = URLSessionConfiguration.default
+        let session = URLSession(configuration: config)
+        theRequest.httpMethod = "GET"
+        
+        let task:URLSessionDataTask = session.dataTask(with: theRequest as URLRequest) { Data,response,error in
             if error != nil {
-                print(error!.description)
+                print(error ?? "error")
             } else {
-                if let httpResponse = response as? NSHTTPURLResponse {
+                if let httpResponse = response as? HTTPURLResponse {
                     if httpResponse.statusCode == 200 {
                         do {
-                            if let data = data, let jsonResult = try NSJSONSerialization.JSONObjectWithData(data, options: []) as? NSDictionary {
-                                self.arrayData = jsonResult.valueForKey("feed")!.valueForKey("entry")!
-                                dispatch_async(dispatch_get_main_queue()) {
-                                self.tableView.reloadData()
+                            if let data = Data, let jsonResult = try JSONSerialization.jsonObject(with: data, options: []) as? NSDictionary {
+                                if let feed = jsonResult.value(forKey: "feed") as? [String:Any]{
+                                    self.arrayData = (feed as NSDictionary).value(forKey: "entry") as! [AnyObject]
+                                    DispatchQueue.main.async {
+                                        self.tableView.reloadData()
+                                    }
                                 }
                             }
                         } catch let JSONError as NSError {
@@ -90,6 +105,7 @@ class ViewController: UIViewController,UITableViewDelegate,UITableViewDataSource
             }
         }
         task.resume()
+        session.finishTasksAndInvalidate()
     }
 
 }
